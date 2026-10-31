@@ -1,0 +1,19 @@
+{
+  "validation": {
+    "required_columns": ["student_id", "score"],
+    "numeric_columns": ["score"]
+  },
+  "processing": {
+    "remove_duplicates": true,
+    "missing": {
+      "enabled": true,
+      "axis": "rows"
+    },
+    "outliers": {
+      "enabled": false,
+      "columns": [],
+      "method": "iqr",
+      "threshold": 1.5
+    }
+  }
+}

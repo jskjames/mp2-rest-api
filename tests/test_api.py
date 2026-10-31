@@ -1,19 +1,9 @@
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
-from main import app, storage
+from main import storage
 
 SAMPLE = (Path(__file__).resolve().parents[1] / "fixtures" / "sample_data.csv").read_bytes()
-
-
-@pytest.fixture
-def client():
-    storage.clear()
-    with TestClient(app) as test_client:
-        yield test_client
-    storage.clear()
 
 
 def upload(client, filename="sample_data.csv", contents=SAMPLE):
@@ -67,7 +57,7 @@ def test_limit_above_row_count(client):
     assert len(client.get(f"/datasets/{dataset_id}?limit=999").json()["data"]) == 6
 
 
-def test_missing_id(client):
+def test_retrieve_missing_dataset(client):
     response = client.get("/datasets/999")
     assert response.status_code == 404
     assert response.json() == {"detail": "Dataset not found"}
@@ -135,3 +125,46 @@ def test_application_logging(client, caplog):
     assert "Retrieved dataset: id=1, returned_rows=2" in caplog.text
     assert "Dataset not found: 999" in caplog.text
     assert "Unsupported file format: .txt" in caplog.text
+
+
+def test_upload_csv(client, sample_csv_bytes):
+    response = client.post(
+        "/upload",
+        files={"file": ("sample_data.csv", sample_csv_bytes, "text/csv")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["rows"] == 6
+    assert data["columns"] == 2
+    assert isinstance(data["id"], int)
+    assert data["id"] > 0
+
+
+def test_process_and_retrieve(client, uploaded_dataset_id, processing_body):
+    response = client.post(
+        f"/datasets/{uploaded_dataset_id}/process", json=processing_body
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": uploaded_dataset_id,
+        "validation_rows_removed": 1,
+        "cleaning_report": {
+            "rows_before": 5,
+            "rows_after": 3,
+            "rows_removed": 2,
+            "columns_before": 2,
+            "columns_after": 2,
+            "columns_removed": 0,
+        },
+    }
+    response = client.get(f"/datasets/{uploaded_dataset_id}")
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": uploaded_dataset_id,
+        "data": [
+            {"student_id": 1, "score": 80},
+            {"student_id": 2, "score": 90},
+            {"student_id": 5, "score": 85},
+        ],
+        "total_rows": 3,
+    }
